@@ -10,7 +10,7 @@ Resources:
       EnableDnsSupport: true
       Tags: 
         - Key: Name
-          Value: 'aws-study-vpc'
+          Value: 'raisetech-cf-vpc'
 
   # Internet Gateway
   InternetGateway:
@@ -18,7 +18,7 @@ Resources:
     Properties:
       Tags: 
         - Key: Name
-          Value: 'aws-study-igw'
+          Value: 'raisetech-cf-igw'
 
   AttachInternetGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -36,7 +36,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags: 
         - Key: Name
-          Value: 'aws-study-public-subnet-1a'
+          Value: 'raisetech-cf-public-subnet-1a'
 
   # Public Subnet(AZ-1c)
   PublicSubnetC:
@@ -48,7 +48,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags: 
         - Key: Name
-          Value: 'aws-study-public-subnet-1c'
+          Value: 'raisetech-cf-public-subnet-1c'
 
   # Private Subnet(AZ-1a)
   PrivateSubnetA:
@@ -59,7 +59,7 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags: 
         - Key: Name
-          Value: 'aws-study-private-subnet-1a'
+          Value: 'raisetech-cf-private-subnet-1a'
 
   # Private Subnet(AZ-1c)
   PrivateSubnetC:
@@ -70,7 +70,7 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags: 
         - Key: Name
-          Value: 'aws-study-private-subnet-1c'
+          Value: 'raisetech-cf-private-subnet-1c'
 
   # Public Route Table
   PublicRouteTable:
@@ -79,7 +79,7 @@ Resources:
       VpcId: !Ref VPC
       Tags: 
         - Key: Name
-          Value: 'aws-study-public-rtb'
+          Value: 'raisetech-cf-public-rtb'
   
   # Public Route（インターネットへのルート）
   PublicRoute:
@@ -111,7 +111,7 @@ Resources:
       VpcId: !Ref VPC
       Tags: 
         - Key: Name
-          Value: 'aws-study-private-rtb'
+          Value: 'raisetech-cf-private-rtb'
 
   # プライベートサブネットAをプライベートルートテーブルに関連付け
   PrivateSubnetARouteTableAssociation:
@@ -126,3 +126,72 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnetC
+
+  # Security Group for EC2
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'raisetech-cf-ec2-sg'
+      GroupDescription: 'Security Group for EC2 Instances'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # SSH 22
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+          Description: 'SSH'
+        # HTTP 80
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+          Description: 'HTTP'
+        # HTTPS 443
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+          Description: 'HTTPS'
+        # Custom TCP 8080
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '0.0.0.0/0'
+          Description: 'Custom TCP 8080'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: '0.0.0.0/0'
+          Description: 'All outbound traffic'
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-ec2-sg'
+
+  # Security Group for RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'raisetech-cf-rds-sg'
+      GroupDescription: 'Security Group for RDS Instances'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # MySQL/Aurora 3306 from PublicSubnetA
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '10.0.1.0/24'
+          Description: 'MySQL from PublicSubnetA'
+        # MySQL/Aurora 3306 from PublicSubnetC
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '10.0.2.0/24'
+          Description: 'MySQL from PublicSubnetC'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: '0.0.0.0/0'
+          Description: 'All outbound traffic'
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-rds-sg'
+
