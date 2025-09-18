@@ -212,9 +212,87 @@ Resources:
             VolumeType: gp3
             VolumeSize: 8
             DeleteOnTermination: true
-      Tags: 
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          dnf update -y
+          dnf -y localinstall https://dev.mysql.com/get/mysql84-community-release-el9-1.noarch.rpm
+          dnf -y install mysql-community-client
+      Tags:
         - Key: Name
           Value: 'raisetech-cf-ec2'
+
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: raisetech-cf-db-subnet-group
+      DBSubnetGroupDescription: 'DB Subnet Group for RDS in private subnets'
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetC
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-db-subnet-group'
+
+  # RDS Instance
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: raisetech-cf-rds
+      DBInstanceClass: db.t4g.micro
+      Engine: mysql
+      EngineVersion: '8.0.39'
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterPassword
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      Port: 3306
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DeletionProtection: true
+      BackupRetentionPeriod: 1
+      PreferredBackupWindow: '20:00-21:00'
+      CopyTagsToSnapshot: true
+      EnablePerformanceInsights: false
+      EnableCloudwatchLogsExports:
+        - audit
+        - error
+        - general
+        - slowquery
+      MonitoringInterval: 0
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-rds'
+
+  # SSM Parameter for DB Master Username (作成後に保存)
+  SSMDBMasterUsername:
+    Type: AWS::SSM::Parameter
+    DependsOn: RDSInstance
+    Properties:
+      Name: /raisetech-cf/rds/master-username
+      Type: String
+      Value: !Ref DBMasterUsername
+      Description: 'RDS Master Username'
+      Tags:
+        Name: 'raisetech-cf-db-master-username'
+
+  # SSM Parameter for DB Master Password (作成後に保存)
+  SSMDBMasterPassword:
+    Type: AWS::SSM::Parameter
+    DependsOn: RDSInstance
+    Properties:
+      Name: /raisetech-cf/rds/master-password
+      Type: String
+      Value: !Ref DBMasterPassword
+      Description: 'RDS Master Password'
+      Tags:
+        Name: 'raisetech-cf-db-master-password'
 
 Parameters:
   LatestAmiId:
@@ -222,3 +300,20 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
     Description: Latest Amazon Linux 2023 AMI ID
 
+  DBMasterUsername:
+    Type: String
+    Default: root
+    Description: 'RDS Master Username'
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: 'Must begin with a letter and contain only alphanumeric characters'
+
+  DBMasterPassword:
+    Type: String
+    Default: GtN9WkdGJjX7BYpj
+    Description: 'RDS Master Password'
+    MinLength: 8
+    MaxLength: 128
+    NoEcho: true
+    ConstraintDescription: 'Must be at least 8 characters long'
