@@ -198,6 +198,7 @@ Resources:
   # EC2 Instance
   EC2Instance:
     Type: AWS::EC2::Instance
+    DependsOn: RDSInstance
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: t3.micro
@@ -205,7 +206,7 @@ Resources:
       SubnetId: !Ref PublicSubnetA
       SecurityGroupIds:
         - !Ref EC2SecurityGroup
-      DisableApiTermination: true
+      DisableApiTermination: false
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -213,11 +214,47 @@ Resources:
             VolumeSize: 8
             DeleteOnTermination: true
       UserData:
-        Fn::Base64: |
+        Fn::Base64: !Sub |
           #!/bin/bash
           dnf update -y
           dnf -y localinstall https://dev.mysql.com/get/mysql84-community-release-el9-1.noarch.rpm
           dnf -y install mysql-community-client
+          dnf -y install java-21-amazon-corretto-devel.x86_64
+          dnf -y install git
+          git clone https://github.com/koujienami/aws-study.git
+          cd aws-study
+          chmod 755 ./gradlew
+          
+          # Edit application.properties
+          cd ./src/main/resources
+          cat > application.properties << EOF
+          spring.application.name=demo
+          spring.datasource.url=jdbc:mysql://${RDSInstance.Endpoint.Address}:3306/awsstudy
+          spring.datasource.username=${DBMasterUsername}
+          spring.datasource.password=${DBMasterPassword}
+          spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+          mybatis.configuration.map-underscore-to-camel-case=true
+          mybatis.mapper-locations=classpath*:/mapper/*.xml
+          EOF
+
+          # Wait for RDS to be fully available
+          echo "Waiting for RDS to be available..."
+          sleep 60
+          
+          # Login to MySQL and execute SQL commands
+          mysql -h ${RDSInstance.Endpoint.Address} -u ${DBMasterUsername} -p${DBMasterPassword} << 'MYSQL_EOF'
+          USE awsstudy;
+          CREATE TABLE IF NOT EXISTS student (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL
+          );
+          INSERT INTO student (name) VALUES ('Kouji Enami');
+          MYSQL_EOF
+
+          # Return to project root and run application
+          cd ../../../
+          ./gradlew bootRun
+          
       Tags:
         - Key: Name
           Value: 'raisetech-cf-ec2'
@@ -239,8 +276,10 @@ Resources:
   RDSInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
+    DependsOn: DBSubnetGroup
     Properties:
       DBInstanceIdentifier: raisetech-cf-rds
+      DBName: awsstudy
       DBInstanceClass: db.t4g.micro
       Engine: mysql
       EngineVersion: '8.0.39'
@@ -254,7 +293,7 @@ Resources:
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
-      DeletionProtection: true
+      DeletionProtection: false
       BackupRetentionPeriod: 1
       PreferredBackupWindow: '20:00-21:00'
       CopyTagsToSnapshot: true
