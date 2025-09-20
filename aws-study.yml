@@ -1,0 +1,409 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-vpc'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-igw'
+
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  
+  # Public Subnet(AZ-1a)
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-public-subnet-1a'
+
+  # Public Subnet(AZ-1c)
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-public-subnet-1c'
+
+  # Private Subnet(AZ-1a)
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.10.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-private-subnet-1a'
+
+  # Private Subnet(AZ-1c)
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.11.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-private-subnet-1c'
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-public-rtb'
+  
+  # Public Route（インターネットへのルート）
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  # パブリックサブネットAをパブリックルートテーブルに関連付け
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  # パブリックサブネットCをパブリックルートテーブルに関連付け
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetC
+
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-private-rtb'
+
+  # プライベートサブネットAをプライベートルートテーブルに関連付け
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetA
+
+  # プライベートサブネットCをプライベートルートテーブルに関連付け
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetC
+
+  # Security Group for EC2
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'raisetech-cf-ec2-sg'
+      GroupDescription: 'Security Group for EC2 Instances'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # SSH 22
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+          Description: 'SSH'
+        # HTTP 80
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+          Description: 'HTTP'
+        # HTTPS 443
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+          Description: 'HTTPS'
+        # Custom TCP 8080
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '0.0.0.0/0'
+          Description: 'Custom TCP 8080'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: '0.0.0.0/0'
+          Description: 'All outbound traffic'
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-ec2-sg'
+
+  # Security Group for RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'raisetech-cf-rds-sg'
+      GroupDescription: 'Security Group for RDS Instances'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # MySQL/Aurora 3306 from PublicSubnetA
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '10.0.1.0/24'
+          Description: 'MySQL from PublicSubnetA'
+        # MySQL/Aurora 3306 from PublicSubnetC
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '10.0.2.0/24'
+          Description: 'MySQL from PublicSubnetC'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: '0.0.0.0/0'
+          Description: 'All outbound traffic'
+      Tags: 
+        - Key: Name
+          Value: 'raisetech-cf-rds-sg'
+
+  # EC2 Instance
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: RDSInstance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t3.small
+      KeyName: aws-study
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      DisableApiTermination: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 8
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          #dnf update -y
+          #dnf -y localinstall https://dev.mysql.com/get/mysql84-community-release-el9-1.noarch.rpm
+          #dnf -y install mysql-community-client
+          #dnf -y install java-21-amazon-corretto-devel.x86_64
+          #dnf -y install git
+          #git clone https://github.com/koujienami/aws-study.git
+          #cd aws-study
+          #chmod 755 ./gradlew
+          
+          # Edit application.properties
+          #cd ./src/main/resources
+          #cat > application.properties << EOF
+          #spring.application.name=demo
+          #spring.datasource.url=jdbc:mysql://${RDSInstance.Endpoint.Address}:3306/awsstudy
+          #spring.datasource.username=${DBMasterUsername}
+          #spring.datasource.password=${DBMasterPassword}
+          #spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+          #mybatis.configuration.map-underscore-to-camel-case=true
+          #mybatis.mapper-locations=classpath*:/mapper/*.xml
+          #EOF
+
+          # Wait for RDS to be fully available
+          #echo "Waiting for RDS to be available..."
+          #sleep 60
+          
+          # Login to MySQL and execute SQL commands
+          #mysql -h ${RDSInstance.Endpoint.Address} -u ${DBMasterUsername} -p${DBMasterPassword} << 'MYSQL_EOF'
+          #USE awsstudy;
+          #CREATE TABLE IF NOT EXISTS student (
+          #  id INT PRIMARY KEY AUTO_INCREMENT,
+          #  name VARCHAR(255) NOT NULL
+          #);
+          #INSERT INTO student (name) VALUES ('Kouji Enami');
+          #MYSQL_EOF
+
+          # Return to project root and run application
+          #cd ../../../
+          #./gradlew bootRun
+          
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-ec2'
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: raisetech-cf-alb
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetC
+      SecurityGroups:
+        - !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-alb'
+
+  # Target Group
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: raisetech-cf-tg
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: 8080
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Targets:
+        - Id: !Ref EC2Instance
+          Port: 8080
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-tg'
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup      
+
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: raisetech-cf-db-subnet-group
+      DBSubnetGroupDescription: 'DB Subnet Group for RDS in private subnets'
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetC
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-db-subnet-group'
+
+  # RDS Instance
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    DependsOn: DBSubnetGroup
+    Properties:
+      DBInstanceIdentifier: raisetech-cf-rds
+      DBName: awsstudy
+      DBInstanceClass: db.t4g.micro
+      Engine: mysql
+      EngineVersion: '8.0.39'
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterPassword
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      Port: 3306
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DeletionProtection: false
+      BackupRetentionPeriod: 1
+      PreferredBackupWindow: '20:00-21:00'
+      CopyTagsToSnapshot: true
+      EnablePerformanceInsights: false
+      EnableCloudwatchLogsExports:
+        - audit
+        - error
+        - general
+        - slowquery
+      MonitoringInterval: 0
+      AutoMinorVersionUpgrade: false
+      Tags:
+        - Key: Name
+          Value: 'raisetech-cf-rds'
+
+  # SSM Parameter for DB Master Username (作成後に保存)
+  SSMDBMasterUsername:
+    Type: AWS::SSM::Parameter
+    DependsOn: RDSInstance
+    Properties:
+      Name: /raisetech-cf/rds/master-username
+      Type: String
+      Value: !Ref DBMasterUsername
+      Description: 'RDS Master Username'
+      Tags:
+        Name: 'raisetech-cf-db-master-username'
+
+  # SSM Parameter for DB Master Password (作成後に保存)
+  SSMDBMasterPassword:
+    Type: AWS::SSM::Parameter
+    DependsOn: RDSInstance
+    Properties:
+      Name: /raisetech-cf/rds/master-password
+      Type: String
+      Value: !Ref DBMasterPassword
+      Description: 'RDS Master Password'
+      Tags:
+        Name: 'raisetech-cf-db-master-password'
+
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID
+
+  DBMasterUsername:
+    Type: String
+    Default: root
+    Description: 'RDS Master Username'
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: 'Must begin with a letter and contain only alphanumeric characters'
+
+  DBMasterPassword:
+    Type: String
+    Default: GtN9WkdGJjX7BYpj
+    Description: 'RDS Master Password'
+    MinLength: 8
+    MaxLength: 128
+    NoEcho: true
+    ConstraintDescription: 'Must be at least 8 characters long'
